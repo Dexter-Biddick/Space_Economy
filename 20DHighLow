@@ -1,5 +1,5 @@
 /**
- * 🌌 SPACE SECTOR: 20-DAY VOLUME RANGE ANALYSIS (V2 - EMAIL INTEGRATION)
+ * SPACE SECTOR: 20-DAY VOLUME RANGE ANALYSIS (V2 - EMAIL INTEGRATION)
  */
 function runVolumeRangeAnalysis() {
   const apiKey = "API";
@@ -65,7 +65,7 @@ function runVolumeRangeAnalysis() {
 }
 
 /**
- * 📧 UPDATED HELPER: SENDS THE VOLUME RANGE REPORT EMAIL (WITH TWEET SUMMARY)
+ * UPDATED HELPER: SENDS THE VOLUME RANGE REPORT EMAIL (WITH TWEET SUMMARY)
  */
 function sendVolRangeEmail(data, headers) {
   const recipient = Session.getActiveUser().getEmail();
