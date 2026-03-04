@@ -1,37 +1,34 @@
 /**
- * 🚀 FMP MASTER TRACKER (V8.4 - WITH RSI INTEGRATION)
+ * SECTOR_RESEARCH_ENGINE (V8.5 - Institutional Clean)
+ * Core Data Pipeline: FMP Stable API Integration
  */
 
 function onOpen() {
   try {
     var ui = SpreadsheetApp.getUi();
-    ui.createMenu('🚀 SPACE MISSION')
-        .addItem('☀️ Refresh Reg Hrs', 'refreshFMP_RegularHours')
-        .addItem('🌑 Refresh PM', 'runPremarketWatch')
-        .addItem('🔊 Refresh Vol', 'runVolumeRangeAnalysis')
+    ui.createMenu('🚀 Space Research')
+        .addItem('☀️ Refresh Regular Hours', 'refreshFMP_RegularHours')
+        .addItem('🌑 Refresh Pre-Market', 'runPremarketWatch')
+        .addItem('🔊 Analyze Volume Ranges', 'runVolumeRangeAnalysis')
         .addSeparator() 
-        .addItem ('🌊 Refresh Monthly Liquidity', 'runUnifiedLiquidityDashboard')
-        .addItem ('📈 Refresh Space Performance','runSpaceSectorPerformance')
-        .addItem ('Refresh Sector Performance','runAssetClassPerformance')
-        .addItem ('🛰️ Refresh Jonathan', 'updateSpaceProject_Master_V2')
+        .addItem('📈 Sector Performance Metrics', 'runSpaceSectorPerformance')
+        .addItem('🛰️ Sync Satellite Launch Data', 'updateSpaceProject_Master_V2')
         .addSeparator() 
-        .addItem('🚀 Update Launch Schedule', 'updateSpaceDashboard')
-        .addItem('🏛️ Pull Senate/House (Last 2 Days)', 'pullSenateHouseTwitterReady')
-        .addItem('🛰️ Scan Transcripts (Golden Dome)', 'countSpaceKeywords')
+        .addItem('🏛️ Regulatory Filings (Congressional)', 'pullSenateHouseTwitterReady')
+        .addItem('📄 Extract Transcript KPIs', 'countSpaceKeywords')
         .addToUi();
   } catch (e) {
-    console.log('Running in background trigger: UI skipped.');
+    console.log('UI skipped in background trigger.');
   }
 }
 
 function refreshFMP_RegularHours() {
-  const apiKey = <API>
+  const apiKey = "YOUR_API_KEY"; // Replace with your key
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName("FMP REG HRS") || ss.insertSheet("FMP REG HRS");
   
   const tickers = ["ASTS", "RKLB", "LUNR", "RDW", "GSAT", "IRDM", "VSAT", "SATS", "ASTI", "VOYG", "BKSY", "PL", "FLY", "KRMN", "SPIR", "MNTS", "LHX", "VELO", "SATL", "SPCE", "SIDU", "TSAT", "KULR", "FJET","YSS"];
-  // Added "RSI (14)" to headers
-  const headers = ["Ticker", "Price", "% Chg", "Today Vol", "Prev Vol", "% Chg Vol", "20D Avg Vol", "Rel Vol", "Activity", "$ Vol Traded", "Open", "Prev Close", "Gap %", "YTD %", "RSI (14)"];
+  const headers = ["Ticker", "Price", "% Chg", "Today Vol", "Prev Vol", "% Chg Vol", "20D Avg Vol", "Rel Vol", "Signal", "$ Vol Traded", "Open", "Prev Close", "Gap %", "YTD %", "RSI (14)"];
   
   let results = [];
   const now = new Date();
@@ -42,14 +39,11 @@ function refreshFMP_RegularHours() {
     try {
       const qResp = UrlFetchApp.fetch(`https://financialmodelingprep.com/stable/quote?symbol=${ticker}&apikey=${apiKey}`);
       const hResp = UrlFetchApp.fetch(`https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=${ticker}&apikey=${apiKey}`);
-      // Fetch RSI Data
       const rsiResp = UrlFetchApp.fetch(`https://financialmodelingprep.com/stable/technical-indicators/rsi?symbol=${ticker}&periodLength=14&timeframe=1day&apikey=${apiKey}`);
       
       const quote = JSON.parse(qResp.getContentText())[0];
       const hist = JSON.parse(hResp.getContentText());
       const rsiData = JSON.parse(rsiResp.getContentText());
-
-      // Get most recent RSI value
       const rsiValue = (rsiData && rsiData.length > 0) ? rsiData[0].rsi : 0;
 
       let startIndex = (hist[0].date === todayStr) ? 1 : 0;
@@ -62,10 +56,7 @@ function refreshFMP_RegularHours() {
       }
       const avgVol20 = totalVol / 20;
 
-      const lastYearEntry = hist.find(entry => {
-        const entryYear = new Date(entry.date).getFullYear();
-        return entryYear < currentYear;
-      });
+      const lastYearEntry = hist.find(entry => new Date(entry.date).getFullYear() < currentYear);
       const startPrice = lastYearEntry ? lastYearEntry.close : hist[hist.length - 1].close;
       const ytdPerf = (quote.price - startPrice) / startPrice;
 
@@ -73,18 +64,16 @@ function refreshFMP_RegularHours() {
       const volPctChgPrev = (quote.volume / prevVol) - 1; 
       const dollarVol = quote.volume * (quote.vwap || quote.price);
       const gapPct = (quote.open - prevClose) / prevClose;
-      const isPositive = quote.changePercentage > 0;
 
-      let activity = "";
-      if (rVol >= 2.0) { activity = isPositive ? "🚀 ESCAPE VELOCITY 🟢" : "💥 RUD 🔴"; } 
-      else if (rVol >= 1.5) { activity = isPositive ? "🔥 LIFTOFF 🟢" : "🔥 UNCONTROLLED RE-ENTRY 🔴"; } 
-      else if (rVol >= 0.5) { activity = isPositive ? "💤 NOMINAL 🟢" : "💤 NOMINAL 🔴"; } 
-      else { activity = isPositive ? "🎈 UNTETHERED 🟢" : "🎈 UNTETHERED 🔴"; }
+      // Cleaned up Signal Logic
+      let signal = "";
+      if (rVol >= 2.0) { signal = quote.changePercentage > 0 ? "EXPANSION (LONG)" : "BREAKDOWN (SHORT)"; } 
+      else if (rVol >= 1.5) { signal = "HIGH VOLUME ALERT"; } 
+      else { signal = "NOMINAL"; }
 
-      // Added rsiValue to the results array
-      results.push([ticker, quote.price, (quote.changePercentage/100), quote.volume, prevVol, volPctChgPrev, avgVol20, rVol, activity, dollarVol, quote.open, prevClose, gapPct, ytdPerf, rsiValue]);
+      results.push([ticker, quote.price, (quote.changePercentage/100), quote.volume, prevVol, volPctChgPrev, avgVol20, rVol, signal, dollarVol, quote.open, prevClose, gapPct, ytdPerf, rsiValue]);
     } catch (e) {
-      results.push([ticker, 0, 0, 0, 0, 0, 0, 0, "⚠️ Error", 0, 0, 0, 0, 0, 0]);
+      results.push([ticker, 0, 0, 0, 0, 0, 0, 0, "ERROR", 0, 0, 0, 0, 0, 0]);
     }
   });
 
@@ -94,126 +83,59 @@ function refreshFMP_RegularHours() {
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setBackground("#2d2d2d").setFontColor("white").setFontWeight("bold");
   sheet.getRange(2, 1, results.length, headers.length).setValues(results);
   
-  // Formatting
   sheet.getRange(2, 2, results.length, 1).setNumberFormat("$#,##0.00");
   sheet.getRange(2, 3, results.length, 1).setNumberFormat("0.00%");
-  sheet.getRange(2, 4, results.length, 2).setNumberFormat("#,##0");
   sheet.getRange(2, 6, results.length, 1).setNumberFormat("0.00%");
-  sheet.getRange(2, 7, results.length, 1).setNumberFormat("#,##0");
   sheet.getRange(2, 8, results.length, 1).setNumberFormat("0.00");
   sheet.getRange(2, 10, results.length, 1).setNumberFormat("$#,##0");
-  sheet.getRange(2, 11, results.length, 2).setNumberFormat("$#,##0.00");
   sheet.getRange(2, 13, results.length, 2).setNumberFormat("0.00%");
-  // RSI Formatting (Column 15)
   sheet.getRange(2, 15, results.length, 1).setNumberFormat("0.00");
 
   sheet.autoResizeColumns(1, headers.length);
 
-  const summaryData = logDollarVolumeHistory(results);
+  const summaryData = logMarketIntelligence(results);
   sendMissionReportEmail(summaryData, results, headers);
-
-  console.log("Mission Control: Update Complete. Email dispatched.");
 }
 
-// ... (Rest of the functions logDollarVolumeHistory and sendMissionReportEmail remain the same)
-
-function logDollarVolumeHistory(results) {
+function logMarketIntelligence(results) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let logSheet = ss.getSheetByName("TOTAL $ VOL HISTORY") || ss.insertSheet("TOTAL $ VOL HISTORY");
-  let awardSheet = ss.getSheetByName("Awards of the day") || ss.insertSheet("Awards of the day");
+  let metricSheet = ss.getSheetByName("Daily Performance Highlights") || ss.insertSheet("Daily Performance Highlights");
 
   if (logSheet.getLastRow() === 0) {
-    const logHeaders = ["Date", "Time", "Total Sector $ Vol", "Space Daddy", "Crater Maker", "Super Heavy-Lift", "Orbital Yeet", "Deep Space Silence", "Con Artist", "Slingshot Maneuverer"];
+    const logHeaders = ["Date", "Time", "Sector $ Vol", "Top Performer", "Laggard", "Max Liquidity", "Max RelVol", "Min RelVol", "Gap Fade", "Trend Reversal"];
     logSheet.appendRow(logHeaders);
     logSheet.getRange("A1:J1").setFontWeight("bold").setBackground("#0d1b2a").setFontColor("white");
   }
 
   const totalDollarVol = results.reduce((sum, row) => sum + (row[9] || 0), 0);
   
-  let last5Data = logSheet.getRange(Math.max(1, logSheet.getLastRow() - 4), 1, 5, 3).getValues();
-  let trendTweet = `📈 Sector Trend (5D)\n\n`;
-  last5Data.forEach(row => {
-    if (row[0] && row[0] instanceof Date) {
-      let date = Utilities.formatDate(new Date(row[0]), Session.getScriptTimeZone(), "MMM d");
-      let vol = (row[2] / 1000000).toFixed(1);
-      trendTweet += `${date}: $${vol}M\n`;
-    }
-  });
-  trendTweet += `TODAY: $${(totalDollarVol / 1000000).toFixed(1)}M\n\n#SpaceStocks #MarketData`;
+  // High-performance sorting
+  const topPerf = [...results].sort((a, b) => b[2] - a[2])[0];
+  const laggard = [...results].sort((a, b) => a[2] - b[2])[0];
+  const highLiq = [...results].sort((a, b) => b[9] - a[9])[0];
+  const highRVol = [...results].sort((a, b) => b[7] - a[7])[0];
 
-  const daddy = [...results].sort((a, b) => b[2] - a[2])[0];
-  const crater = [...results].sort((a, b) => a[2] - b[2])[0];
-  const heavy = [...results].sort((a, b) => b[9] - a[9])[0];
-  const yeet = [...results].sort((a, b) => b[7] - a[7])[0];
-  const silence = [...results].sort((a, b) => a[7] - b[7])[0];
-
-  const daddyData = { ticker: daddy[0], stat: `+${(daddy[2] * 100).toFixed(1)}%` };
-  const craterData = { ticker: crater[0], stat: `${(crater[2] * 100).toFixed(1)}%` };
-  const heavyData = { ticker: heavy[0], stat: `$${Math.round(heavy[9] / 1000000)}M` };
-  const yeetData = { ticker: yeet[0], stat: `${yeet[7].toFixed(2)}x` };
-  const silenceData = { ticker: silence[0], stat: `${silence[7].toFixed(2)}x` };
-
-  let conArtistTicker = "None", slingshotTicker = "None", biggestFade = 0, biggestRecovery = 0;
-  results.forEach(row => {
-    let ticker = row[0], finalPct = row[2], gap = row[12];
-    if (gap > 0 && finalPct < gap && (gap - finalPct) > biggestFade) { biggestFade = gap - finalPct; conArtistTicker = ticker; }
-    if (gap < 0 && finalPct > gap && (finalPct - gap) > biggestRecovery) { biggestRecovery = finalPct - gap; slingshotTicker = ticker; }
-  });
-
-  const conArtistStat = conArtistTicker !== "None" ? `-${(biggestFade * 100).toFixed(1)}% Fade` : "None";
-  const slingshotStat = slingshotTicker !== "None" ? `+${(biggestRecovery * 100).toFixed(1)}% Swing` : "None";
-
-  const conArtistLog = conArtistTicker !== "None" ? `${conArtistTicker} (${conArtistStat})` : "None";
-  const slingshotLog = slingshotTicker !== "None" ? `${slingshotTicker} (${slingshotStat})` : "None";
-
-  logSheet.appendRow([
-    new Date().toLocaleDateString(), new Date().toLocaleTimeString(), totalDollarVol, 
-    `${daddyData.ticker} (${daddyData.stat})`, `${craterData.ticker} (${craterData.stat})`, 
-    `${heavyData.ticker} (${heavyData.stat})`, `${yeetData.ticker} (${yeetData.stat})`, 
-    `${silenceData.ticker} (${silenceData.stat})`, conArtistLog, slingshotLog
-  ]);
-
-  awardSheet.clear(); 
-  const dailyAwards = [
-    [daddyData.ticker, "Space Daddy", `${daddyData.stat} Gain`],
-    [craterData.ticker, "Crater Maker", `${craterData.stat} Loss`],
-    [heavyData.ticker, "Super Heavy Lift", `${heavyData.stat} $ Vol`],
-    [yeetData.ticker, "Orbital Yeet", `${yeetData.stat} RVol`],
-    [silenceData.ticker, "Deep Space Silence", `${silenceData.stat} RVol`],
-    [conArtistTicker, "Con Artist", conArtistStat],
-    [slingshotTicker, "Slingshot Maneuverer", slingshotStat]
+  const highlights = [
+    [topPerf[0], "Top Performer", `+${(topPerf[2] * 100).toFixed(1)}%`],
+    [laggard[0], "Laggard", `${(laggard[2] * 100).toFixed(1)}%`],
+    [highLiq[0], "Max Liquidity", `$${Math.round(highLiq[9] / 1000000)}M`],
+    [highRVol[0], "Max RelVol", `${highRVol[7].toFixed(2)}x`]
   ];
 
-  awardSheet.getRange("A1:C1").setValues([["Ticker", "Award", "Stat"]]).setFontWeight("bold").setBackground("#1DA1F2").setFontColor("white");
-  awardSheet.getRange(2, 1, dailyAwards.length, 3).setValues(dailyAwards).setHorizontalAlignment("left");
+  metricSheet.clear();
+  metricSheet.getRange("A1:C1").setValues([["Ticker", "Category", "Stat"]]).setFontWeight("bold").setBackground("#1a73e8").setFontColor("white");
+  metricSheet.getRange(2, 1, highlights.length, 3).setValues(highlights);
 
-  const formattedDate = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "MMM d, yyyy");
-  let dailyTweet = `Space Grammys - ${formattedDate}\n\n`;
-  let uniqueTickers = new Set();
-  dailyAwards.forEach(row => {
-    if(row[0] !== "None") {
-      dailyTweet += `${row[1]}: $${row[0]} (${row[2]})\n`;
-      uniqueTickers.add(`$${row[0]}`);
-    }
-  });
-  dailyTweet += `\n${Array.from(uniqueTickers).join(" ")}`;
-
-  awardSheet.getRange("E1").setValue("📋 DAILY TWEET").setFontWeight("bold").setFontColor("#1DA1F2");
-  awardSheet.getRange("E2").setValue(dailyTweet).setVerticalAlignment("top").setWrap(true);
-
-  awardSheet.autoResizeColumns(1, 10);
-  
   return {
-    tweet: dailyTweet,
-    trendTweet: trendTweet,
+    highlightsText: highlights.map(h => `${h[1]}: ${h[0]} (${h[2]})`).join("\n"),
     totalVol: totalDollarVol
   };
 }
 
 function sendMissionReportEmail(summaryData, results, headers) {
   const recipient = Session.getActiveUser().getEmail();
-  const dateStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "MMM. d");
-  const subject = `🚀 Mission Report: Sector $ Vol $${(summaryData.totalVol / 1000000).toFixed(2)}M`;
+  const subject = `Daily Sector Brief: $${(summaryData.totalVol / 1000000).toFixed(2)}M USD`;
   
   let tableHtml = `<table border="1" style="border-collapse: collapse; font-family: sans-serif; font-size: 11px;">
     <tr style="background-color: #2d2d2d; color: white;">
@@ -221,40 +143,17 @@ function sendMissionReportEmail(summaryData, results, headers) {
     </tr>`;
   
   results.forEach(row => {
-    tableHtml += '<tr>';
-    row.forEach((cell, index) => {
-      let formatted = cell;
-      if (typeof cell === 'number') {
-        if (index === 1 || index === 9 || index === 10 || index === 11) formatted = '$' + cell.toLocaleString();
-        else if (index === 2 || index === 5 || index === 12 || index === 13) formatted = (cell * 100).toFixed(2) + '%';
-        else formatted = cell.toLocaleString();
-      }
-      tableHtml += `<td style="padding: 4px; text-align: center;">${formatted}</td>`;
-    });
-    tableHtml += '</tr>';
+    tableHtml += '<tr>' + row.map((cell, i) => `<td style="padding:4px; text-align:center;">${cell}</td>`).join('') + '</tr>';
   });
   tableHtml += '</table>';
 
   const body = `
-    <h2>Mission Control Summary</h2>
-    <div style="display: flex; gap: 20px;">
-      <div style="flex: 1; background: #f4f4f4; padding: 10px; border-left: 5px solid #1DA1F2;">
-        <h4>🏆 Space Grammys</h4>
-        <pre style="white-space: pre-wrap; margin: 0; font-size: 12px;">${summaryData.tweet}</pre>
-      </div>
-      <div style="flex: 1; background: #e8f5e9; padding: 10px; border-left: 5px solid #4caf50;">
-        <h4>📈 Sector Trend (5D)</h4>
-        <pre style="white-space: pre-wrap; margin: 0; font-size: 12px;">${summaryData.trendTweet}</pre>
-      </div>
-    </div>
-    <hr>
-    <h3>Market Data - ${dateStr}</h3>
+    <h3>Sector Performance Summary</h3>
+    <pre style="background:#f4f4f4; padding:10px; border-left:4px solid #1a73e8;">${summaryData.highlightsText}</pre>
+    <br>
+    <h3>Detailed Market Data</h3>
     ${tableHtml}
   `;
 
-  MailApp.sendEmail({
-    to: recipient,
-    subject: subject,
-    htmlBody: body
-  });
+  MailApp.sendEmail({ to: recipient, subject: subject, htmlBody: body });
 }
