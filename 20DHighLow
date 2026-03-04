@@ -1,0 +1,139 @@
+/**
+ * 🌌 SPACE SECTOR: 20-DAY VOLUME RANGE ANALYSIS (V2 - EMAIL INTEGRATION)
+ */
+function runVolumeRangeAnalysis() {
+  const apiKey = "API";
+  const tickers = ["ASTS", "RKLB", "LUNR", "RDW", "GSAT", "IRDM", "VSAT", "SATS", "ASTI", "VOYG", "BKSY", "PL", "FLY", "KRMN", "SPIR", "MNTS", "LHX", "VELO", "SATL", "SPCE", "SIDU", "TSAT", "KULR", "FJET","YSS"];
+  
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName("VOL RANGE") || ss.insertSheet("VOL RANGE");
+  
+  const headers = ["Company", "Ticker", "Prev Vol", "% Chg Vol", "20D Low Vol", "20D High Vol", "Range"];
+  
+  let finalData = [];
+
+  tickers.forEach(ticker => {
+    try {
+      const url = `https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=${ticker}&apikey=${apiKey}`;
+      const res = JSON.parse(UrlFetchApp.fetch(url).getContentText());
+      
+      if (res && res.length > 21) {
+        const history = res.slice(0, 22); 
+        const prevVol = history[0].volume;
+        const dayBeforeVol = history[1].volume;
+        const pctChgVol = dayBeforeVol > 0 ? (prevVol - dayBeforeVol) / dayBeforeVol : 0;
+        
+        const last20Days = history.slice(0, 20);
+        const volArray = last20Days.map(day => day.volume);
+        const lowVol = Math.min(...volArray);
+        const highVol = Math.max(...volArray);
+        
+        // Push data to array
+        finalData.push([ticker, ticker, prevVol, pctChgVol, lowVol, highVol, ""]);
+      }
+    } catch (e) { console.log(`Error on ${ticker}: ${e.message}`); }
+  });
+
+  if (finalData.length > 0) {
+    // 1. Sort the data array BY % Chg Vol (Index 3) Descending BEFORE writing
+    finalData.sort((a, b) => b[3] - a[3]);
+
+    // 2. Clear and write to sheet
+    sheet.clear();
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setBackground("#0d1b2a").setFontColor("white").setFontWeight("bold");
+    sheet.getRange(2, 1, finalData.length, 7).setValues(finalData);
+    
+    // 3. Apply Formulas and Formatting to Sheet
+    for (let i = 0; i < finalData.length; i++) {
+      let row = i + 2;
+      let formula = `=IFERROR(REPT("—", 10 * (C${row}-E${row})/(F${row}-E${row})) & "●" & REPT("—", 10 * (1 - (C${row}-E${row})/(F${row}-E${row}))), "—")`;
+      sheet.getRange(row, 7).setFormula(formula).setFontColor("#1155cc"); 
+    }
+
+    sheet.getRange(2, 3, finalData.length, 1).setNumberFormat("#,##0");
+    sheet.getRange(2, 4, finalData.length, 1).setNumberFormat("0.00%");
+    sheet.getRange(2, 5, finalData.length, 2).setNumberFormat("#,##0");
+    sheet.getRange(2, 7, finalData.length, 1).setHorizontalAlignment("center").setFontFamily("Courier New").setFontWeight("bold");
+    sheet.autoResizeColumns(1, 7);
+
+    // 4. Dispatch Email
+    sendVolRangeEmail(finalData, headers);
+
+    // ✅ Confirmation in Log (No Pop-up)
+    console.log("Mission Control: Volume Range Analysis complete. Email dispatched.");
+  }
+}
+
+/**
+ * 📧 UPDATED HELPER: SENDS THE VOLUME RANGE REPORT EMAIL (WITH TWEET SUMMARY)
+ */
+function sendVolRangeEmail(data, headers) {
+  const recipient = Session.getActiveUser().getEmail();
+  const dateStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "MMM. d");
+  const subject = `Volume Range Report - ${dateStr}`;
+  
+  // Logic for the Tweet summary: Find 20d Highs and Lows
+  let highs = [];
+  let lows = [];
+  
+  data.forEach(row => {
+    if (row[2] === row[5]) highs.push(`$${row[1]}`); // Prev Vol matches 20D High
+    if (row[2] === row[4]) lows.push(`$${row[1]}`);  // Prev Vol matches 20D Low
+  });
+
+  let tweetText = `📊 SPACE SECTOR VOLUME RECON\n\n`;
+  tweetText += highs.length > 0 ? `20D VOL HIGHS:\n${highs.join(' ')}\n\n` : ``;
+  tweetText += lows.length > 0 ? `20D VOL LOWS:\n${lows.join(' ')}\n\n` : ``;
+  tweetText += `#SpaceStocks #Trading`;
+
+  // Remove "Company" header for email
+  const emailHeaders = headers.slice(1); 
+  
+  // Build the HTML Table
+  let tableHtml = `<table border="1" style="border-collapse: collapse; font-family: 'Courier New', Courier, monospace; font-size: 12px; width: 100%;">
+    <tr style="background-color: #0d1b2a; color: white;">
+      <th>${emailHeaders.join('</th><th>')}</th>
+    </tr>`;
+  
+  data.forEach(row => {
+    const prev = row[2];
+    const low = row[4];
+    const high = row[5];
+    let visual = "—";
+    
+    if (high > low) {
+      const pos = Math.round(((prev - low) / (high - low)) * 10);
+      const safePos = Math.max(0, Math.min(10, pos));
+      visual = "—".repeat(safePos) + "●" + "—".repeat(10 - safePos);
+    }
+
+    tableHtml += '<tr>';
+    tableHtml += `<td style="padding:5px; text-align:center;"><b>${row[1]}</b></td>`; 
+    tableHtml += `<td style="padding:5px; text-align:right;">${row[2].toLocaleString()}</td>`; 
+    tableHtml += `<td style="padding:5px; text-align:right;">${(row[3] * 100).toFixed(2)}%</td>`; 
+    tableHtml += `<td style="padding:5px; text-align:right;">${row[4].toLocaleString()}</td>`; 
+    tableHtml += `<td style="padding:5px; text-align:right;">${row[5].toLocaleString()}</td>`; 
+    tableHtml += `<td style="padding:5px; text-align:center; color: #1155cc; font-weight:bold;">${visual}</td>`; 
+    tableHtml += '</tr>';
+  });
+  
+  tableHtml += '</table>';
+
+  const body = `
+    <div style="background-color: #f8f9fa; border: 1px solid #dee2e6; padding: 15px; margin-bottom: 20px; font-family: sans-serif;">
+      <h4 style="margin-top:0;">📱 X/Tweet Format:</h4>
+      <pre style="white-space: pre-wrap; margin: 0; font-size: 13px;">${tweetText}</pre>
+    </div>
+    <h2 style="font-family: sans-serif;">Mission Control: Volume Range Analysis</h2>
+    <hr>
+    <h3 style="font-family: sans-serif;">Volume Data - ${dateStr}</h3>
+    <p style="font-family: sans-serif; font-size: 11px; color: #666;">Note: Visual represents Yesterday's Volume relative to the 20-day High/Low range.</p>
+    ${tableHtml}
+  `;
+
+  MailApp.sendEmail({
+    to: recipient,
+    subject: subject,
+    htmlBody: body
+  });
+}
