@@ -1,0 +1,101 @@
+/**
+ * 🛰️ ASSET CLASS PERFORMANCE COMPARISON
+ * Compares Space (Placeholder) vs Broad Markets
+ * Updated: Trailing 1-Month (MTD) vs. Full Audit YTD
+ */
+function runAssetClassPerformance() {
+  const apiKey = "API";
+  
+  const assetMap = [
+    ["Space (Self-Calc)", "SPACE_HOLDER"],
+    ["S&P 500", "SPY"],
+    ["Nasdaq 100", "QQQ"],
+    ["Russell 2000", "IWM"],
+    ["Gold", "GLD"],
+    ["Crypto (BTC)", "BTCUSD"],
+    ["Fixed Income", "BND"],
+    ["Defense/Legacy Space", "ITA"],      // Peer Benchmark
+    ["AI & Tech Basket", "AIQ"],          // Narrative Benchmark
+    ["Utilities/Power", "XLU"],           // Infrastructure Benchmark
+    ["Emerging Markets", "VWO"],          // Risk Benchmark
+    ["Intl Equities (Ex-US)", "VXUS"]    // Global Benchmark
+  ];
+  
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName("ASSET CLASS AUDIT") || ss.insertSheet("ASSET CLASS AUDIT");
+  sheet.clear();
+
+  const now = new Date();
+  const todayStr = formatDate(now); 
+  const anchorDateObj = new Date(now.getFullYear(), now.getMonth(), 0);
+  const anchorDateStr = formatDate(anchorDateObj);
+
+  // --- LOGIC: DYNAMIC DATE GENERATION ---
+  const yearStartStr = formatDate(new Date(anchorDateObj.getFullYear() - 1, 11, 31)); // Dec 31
+  const oneMoDateStr = formatDate(new Date(anchorDateObj.getFullYear(), anchorDateObj.getMonth(), 0)); // Jan 31
+  const threeMoDateStr = formatDate(new Date(anchorDateObj.getFullYear(), anchorDateObj.getMonth() - 3, anchorDateObj.getDate()));
+  const twelveMoDateStr = formatDate(new Date(anchorDateObj.getFullYear() - 1, anchorDateObj.getMonth(), anchorDateObj.getDate()));
+  const threeYrDateStr = formatDate(new Date(anchorDateObj.getFullYear() - 3, anchorDateObj.getMonth(), anchorDateObj.getDate()));
+
+  const headers = ["Asset Class", "Ticker", `Price (${anchorDateStr})`, "MTD % (1-Mo)", "Audit YTD %", "3Mo %", "12Mo %", "3Yr Ann %"];
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+
+  let performanceResults = [];
+
+  assetMap.forEach(([name, ticker]) => {
+    if (ticker === "SPACE_HOLDER") {
+      performanceResults.push([name, "-", "", "", "", "", "", ""]); 
+      return;
+    }
+
+    try {
+      const url = `https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=${ticker}&apikey=${apiKey}`;
+      const res = JSON.parse(UrlFetchApp.fetch(url).getContentText());
+      
+      if (res && res.length > 0) {
+        const getPrice = (target) => {
+          const entry = res.find(day => day.date <= target);
+          return entry ? (entry.adjClose || entry.close) : null;
+        };
+
+        const pAnchor = getPrice(anchorDateStr); // Feb 28
+        const pYear   = getPrice(yearStartStr);  // Dec 31
+        const p1M     = getPrice(oneMoDateStr);  // Jan 31
+        const p3M     = getPrice(threeMoDateStr);
+        const p12M    = getPrice(twelveMoDateStr);
+        const p3Y     = getPrice(threeYrDateStr);
+
+        if (pAnchor) {
+          // MTD: Previous Month End to Anchor Date
+          const mtd = (pAnchor && p1M) ? (pAnchor / p1M - 1) : "N/A"; 
+          
+          // YTD: Previous Year End to Anchor Date
+          const ytd = (pAnchor && pYear) ? (pAnchor / pYear - 1) : "N/A"; 
+          
+          const t3m = p3M ? (pAnchor / p3M - 1) : "N/A";
+          const t12 = p12M ? (pAnchor / p12M - 1) : "N/A";
+          const t3y = p3Y ? (Math.pow((pAnchor / p3Y), 1/3) - 1) : "N/A";
+
+          performanceResults.push([name, ticker, pAnchor, mtd, ytd, t3m, t12, t3y]);
+        }
+      }
+    } catch (e) { console.log(`Error on ${ticker}: ${e.message}`); }
+  });
+
+  if (performanceResults.length > 0) {
+    sheet.getRange(2, 1, performanceResults.length, headers.length).setValues(performanceResults);
+    
+    // Applying basic numeric formatting for usability
+    sheet.getRange(2, 3, performanceResults.length, 1).setNumberFormat("$#,##0.00");
+    sheet.getRange(2, 4, performanceResults.length, 5).setNumberFormat("0.00%");
+    
+    sheet.autoResizeColumns(1, headers.length);
+  }
+}
+
+function formatDate(date) {
+  const year = date.getFullYear();
+  const month = ("0" + (date.getMonth() + 1)).slice(-2);
+  const day = ("0" + date.getDate()).slice(-2);
+  return `${year}-${month}-${day}`;
+}
