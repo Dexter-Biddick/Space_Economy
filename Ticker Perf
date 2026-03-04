@@ -1,0 +1,112 @@
+/**
+ * SPACE SECTOR PERFORMANCE AUDIT (Alphabetized)
+ * Updated: Trailing 1-Month (MTD) vs. Full Audit YTD
+ */
+function runSpaceSectorPerformance() {
+  const apiKey = "API";
+  const tickers = ["ASTS", "RKLB", "LUNR", "RDW", "GSAT", "IRDM", "VSAT", "SATS", "ASTI", "VOYG", "BKSY", "PL", "FLY", "KRMN", "SPIR", "MNTS", "LHX", "VELO", "SATL", "SPCE", "SIDU", "TSAT", "KULR", "FJET","YSS"];
+  
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName("PERFORMANCE PULL") || ss.insertSheet("PERFORMANCE PULL");
+  sheet.clear();
+
+  // --- LOGIC: DYNAMIC DATE GENERATION ---
+  const now = new Date();
+  const todayStr = formatDate(now); 
+  
+  // Anchor Date: Last day of previous month (e.g., Feb 28 if today is March)
+  const anchorDateObj = new Date(now.getFullYear(), now.getMonth(), 0);
+  const anchorDateStr = formatDate(anchorDateObj);
+
+  // Reference Starts
+  const yearStartStr = formatDate(new Date(anchorDateObj.getFullYear() - 1, 11, 31)); // Dec 31
+  const oneMoDateStr = formatDate(new Date(anchorDateObj.getFullYear(), anchorDateObj.getMonth(), 0)); // Jan 31 (Last day of month before anchor)
+  const threeMoDateStr = formatDate(new Date(anchorDateObj.getFullYear(), anchorDateObj.getMonth() - 3, anchorDateObj.getDate()));
+  const twelveMoDateStr = formatDate(new Date(anchorDateObj.getFullYear() - 1, anchorDateObj.getMonth(), anchorDateObj.getDate()));
+  const threeYrDateStr = formatDate(new Date(anchorDateObj.getFullYear() - 3, anchorDateObj.getMonth(), anchorDateObj.getDate()));
+
+  // Headers
+  const headers = [
+    "Ticker", 
+    `Live YTD % (vs ${todayStr})`, 
+    `Price (${anchorDateStr})`, 
+    "MTD % (1-Mo)", "Audit YTD %", "3Mo %", "12Mo %", "3Yr Ann %",
+    yearStartStr, threeMoDateStr, twelveMoDateStr, threeYrDateStr
+  ];
+  
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers])
+    .setBackground("#1c1c1c").setFontColor("white").setFontWeight("bold");
+
+  let performanceResults = [];
+
+  tickers.forEach(ticker => {
+    try {
+      const url = `https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=${ticker}&apikey=${apiKey}`;
+      const res = JSON.parse(UrlFetchApp.fetch(url).getContentText());
+      
+      if (res && res.length > 0) {
+        const getPrice = (target) => {
+          const entry = res.find(day => day.date <= target);
+          return entry ? (entry.adjClose || entry.close) : null;
+        };
+
+        const pToday  = getPrice(todayStr);     
+        const pAnchor = getPrice(anchorDateStr); // Feb 28
+        const pYear   = getPrice(yearStartStr);  // Dec 31
+        const p1M     = getPrice(oneMoDateStr);  // Jan 31
+        const p3M     = getPrice(threeMoDateStr);
+        const p12M    = getPrice(twelveMoDateStr);
+        const p3Y     = getPrice(threeYrDateStr);
+
+        if (pAnchor) {
+          const liveYtd = (pToday && pYear) ? (pToday / pYear - 1) : "N/A";
+          
+          // MTD: Feb 28 price / Jan 31 price
+          const mtd = (pAnchor && p1M) ? (pAnchor / p1M - 1) : "N/A"; 
+          
+          // Audit YTD: Feb 28 price / Dec 31 price
+          const auditYtd = (pAnchor && pYear) ? (pAnchor / pYear - 1) : "N/A"; 
+          
+          const t3m = p3M ? (pAnchor / p3M - 1) : "N/A";
+          const t12 = p12M ? (pAnchor / p12M - 1) : "N/A";
+          const t3y = p3Y ? (Math.pow((pAnchor / p3Y), 1/3) - 1) : "N/A";
+
+          performanceResults.push([
+            ticker, liveYtd, pAnchor, 
+            mtd, auditYtd, t3m, t12, t3y, 
+            pYear, p3M, p12M, p3Y
+          ]);
+        }
+      }
+    } catch (e) { console.log(`Error on ${ticker}: ${e.message}`); }
+  });
+
+  if (performanceResults.length > 0) {
+    performanceResults.sort((a, b) => a[0].localeCompare(b[0]));
+    sheet.getRange(2, 1, performanceResults.length, headers.length).setValues(performanceResults);
+    
+    // Formatting: Prices (Column C and I-L)
+    [3, 9, 10, 11, 12].forEach(col => {
+       sheet.getRange(2, col, performanceResults.length, 1).setNumberFormat("$#,##0.00");
+    });
+
+    // Formatting: Percentages (Column B, D-H)
+    [2, 4, 5, 6, 7, 8].forEach(col => {
+       sheet.getRange(2, col, performanceResults.length, 1).setNumberFormat("0.00%");
+    });
+    
+    const perfRange = sheet.getRange(2, 2, performanceResults.length, 7);
+    const rulePos = SpreadsheetApp.newConditionalFormatRule().whenNumberGreaterThan(0).setFontColor("#008000").setRanges([perfRange]).build();
+    const ruleNeg = SpreadsheetApp.newConditionalFormatRule().whenNumberLessThan(0).setFontColor("#cc0000").setRanges([perfRange]).build();
+    sheet.setConditionalFormatRules([rulePos, ruleNeg]);
+    
+    sheet.autoResizeColumns(1, headers.length);
+  }
+}
+
+function formatDate(date) {
+  const year = date.getFullYear();
+  const month = ("0" + (date.getMonth() + 1)).slice(-2);
+  const day = ("0" + date.getDate()).slice(-2);
+  return `${year}-${month}-${day}`;
+}
