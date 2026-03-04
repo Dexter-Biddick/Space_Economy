@@ -1,0 +1,128 @@
+/**
+ * 🌌 SPACE SECTOR: PRE-FLIGHT RECON (V2)
+ * - Email automation enabled
+ * - No pop-ups
+ * - Tweet format summary
+ */
+function runPremarketWatch() {
+  const apiKey = API
+  const tickers = ["SPIR", "BKSY", "VSAT", "MNTS", "SIDU", "RKLB", "SATS", "TSAT", "RDW", "FLY", "KRMN", "LHX", "ASTS", "VELO", "GSAT", "SATL", "SPCE", "VOYG", "FJET", "LUNR", "PL", "IRDM", "KULR", "ASTI","YSS"].sort();
+  
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName("FMP PRE-FLIGHT") || ss.insertSheet("FMP PRE-FLIGHT");
+  
+  const symbols = tickers.join(",");
+  const todayStr = new Date().toISOString().split('T')[0];
+  let finalData = [];
+
+  try {
+    // 1. Fetch live activity batches
+    const tradeUrl = `https://financialmodelingprep.com/stable/batch-aftermarket-trade?symbols=${symbols}&apikey=${apiKey}&v=${new Date().getTime()}`;
+    const quoteUrl = `https://financialmodelingprep.com/stable/batch-aftermarket-quote?symbols=${symbols}&apikey=${apiKey}&v=${new Date().getTime()}`;
+    
+    const tradeRes = JSON.parse(UrlFetchApp.fetch(tradeUrl).getContentText());
+    const quoteRes = JSON.parse(UrlFetchApp.fetch(quoteUrl).getContentText());
+    
+    const tradeMap = Object.fromEntries(tradeRes.map(item => [item.symbol, item]));
+    const quoteMap = Object.fromEntries(quoteRes.map(item => [item.symbol, item]));
+
+    tickers.forEach(ticker => {
+      try {
+        const eodUrl = `https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=${ticker}&apikey=${apiKey}`;
+        const eodRes = JSON.parse(UrlFetchApp.fetch(eodUrl).getContentText());
+
+        if (!eodRes || eodRes.length === 0) throw new Error("No History");
+
+        const firstEntryDate = eodRes[0].date;
+        const anchorIdx = (firstEntryDate === todayStr) ? 1 : 0;
+        const prevClose = eodRes[anchorIdx].close;
+        const avgVol20d = (eodRes.slice(anchorIdx, anchorIdx + 20).reduce((sum, d) => sum + d.volume, 0) / 20);
+
+        const quoteData = quoteMap[ticker];
+        const tradeData = tradeMap[ticker];
+
+        const livePrice = (tradeData && tradeData.price) ? tradeData.price : 
+                         ((quoteData && quoteData.price) ? quoteData.price : prevClose);
+        
+        const pmVol = (quoteData && quoteData.volume) ? quoteData.volume : 0;
+        const gapPct = prevClose > 0 ? (livePrice - prevClose) / prevClose : 0;
+        const relativeVol = avgVol20d > 0 ? (pmVol / avgVol20d) : 0;
+
+        finalData.push([
+          ticker,          // 0
+          prevClose,       // 1
+          livePrice,       // 2
+          gapPct,          // 3
+          pmVol,           // 4
+          avgVol20d,       // 5
+          relativeVol,     // 6
+          new Date().toLocaleTimeString() // 7
+        ]);
+
+      } catch (e) {
+        finalData.push([ticker, 0, 0, 0, 0, 0, 0, "DATA ERROR"]);
+      }
+    });
+
+    // --- SHEET OUTPUT ---
+    sheet.clear();
+    const headers = [["Ticker", "Prev Close", "Live Price", "Gap %", "PM Vol", "20D Avg Vol", "Rel Vol", "Last Sync"]];
+    sheet.getRange(1, 1, 1, 8).setValues(headers).setBackground("#0d1b2a").setFontColor("white").setFontWeight("bold");
+    
+    if (finalData.length > 0) {
+      sheet.getRange(2, 1, finalData.length, 8).setValues(finalData);
+      sheet.getRange(2, 1, finalData.length, 8).sort({column: 7, ascending: false}); // Sort by Rel Vol in sheet
+      
+      sheet.getRange(2, 2, finalData.length, 2).setNumberFormat("$#,##0.00");
+      sheet.getRange(2, 4, finalData.length, 1).setNumberFormat("0.00%");
+      sheet.getRange(2, 5, finalData.length, 2).setNumberFormat("#,##0");
+      sheet.getRange(2, 7, finalData.length, 1).setNumberFormat("0.00%");
+      sheet.autoResizeColumns(1, 8);
+    }
+
+    // --- TWEET FORMAT & EMAIL ---
+    sendEmailReport(finalData);
+
+  } catch (e) {
+    console.error("Critical Failure: " + e.toString());
+  }
+}
+
+/**
+ * Handles the Tweet formatting and Emailing
+ */
+function sendEmailReport(data) {
+  // Sort by Gap % (index 3)
+  const sortedByGap = [...data].sort((a, b) => b[3] - a[3]);
+  const top3 = sortedByGap.slice(0, 3);
+  const bottom3 = sortedByGap.slice(-3).reverse();
+
+  // Create Tweet Template
+  let tweet = `PRE-MARKET MOVERS\n\n`;
+  tweet += `Gapping Up:\n` + top3.map(d => `$${d[0]} +${(d[3]*100).toFixed(2)}%`).join('\n') + `\n\n`;
+  tweet += `Down in PM:\n` + bottom3.map(d => `$${d[0]} ${(d[3]*100).toFixed(2)}%`).join('\n') + `\n\n`;
+
+  // Create Email Table
+  let htmlTable = `<table border="1" style="border-collapse: collapse; font-family: sans-serif;">
+    <tr style="background-color: #0d1b2a; color: white;">
+      <th>Ticker</th><th>Gap %</th><th>Price</th><th>Rel Vol</th>
+    </tr>`;
+  
+  data.forEach(row => {
+    htmlTable += `<tr>
+      <td style="padding: 5px;">${row[0]}</td>
+      <td style="padding: 5px;">${(row[3]*100).toFixed(2)}%</td>
+      <td style="padding: 5px;">$${row[2].toFixed(2)}</td>
+      <td style="padding: 5px;">${(row[6]*100).toFixed(2)}%</td>
+    </tr>`;
+  });
+  htmlTable += `</table>`;
+
+  const finalBody = `<h3>Tweet Summary:</h3><pre>${tweet}</pre><br><h3>Full Recon Data:</h3>${htmlTable}`;
+
+  MailApp.sendEmail({
+    to: Session.getActiveUser().getEmail(),
+    subject: `FMP PRE-FLIGHT: ${new Date().toLocaleDateString()}`,
+    htmlBody: finalBody
+  });
+}
